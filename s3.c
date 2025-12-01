@@ -541,7 +541,7 @@ int s3_presign_url(
 
     struct tm unpacked_now;
     if (unpack_time(now, &unpacked_now))
-        return -1; // TODO
+        return S3_OTHER_ERROR;
 
     char date_buf_0[sizeof("YYYYMMDD")];
     char date_buf_1[sizeof("YYYYMMDDthhmmssz")];
@@ -549,7 +549,7 @@ int s3_presign_url(
     int ret = strftime(date_buf_0, sizeof(date_buf_0),
         "%Y%m%d", &unpacked_now);
     if (ret != sizeof(date_buf_0)-1)
-        return -1; // TODO
+        return S3_OTHER_ERROR;
     S3_String yyyymmdd = {
         date_buf_0,
         sizeof(date_buf_0)-1
@@ -558,7 +558,7 @@ int s3_presign_url(
     ret = strftime(date_buf_1, sizeof(date_buf_1),
         "%Y%m%dT%H%M%SZ", &unpacked_now);
     if (ret != sizeof(date_buf_1)-1)
-        return -1; // TODO
+        return S3_OTHER_ERROR;
     S3_String yyyymmddthhmmssz = {
         date_buf_1,
         sizeof(date_buf_1)-1
@@ -567,14 +567,14 @@ int s3_presign_url(
     char hash_buf[32];
     if (payload.len > 0) {
         if (sha256(payload.ptr, payload.len, hash_buf) < 0)
-            return -1;
+            return S3_LIB_ERROR;
     }
     S3_String hash = { hash_buf, sizeof(hash_buf) };
 
     char expire_buf[11];
     ret = snprintf(expire_buf, sizeof(expire_buf), "%d", expire);
     if (ret < 0 || ret >= (int) sizeof(expire_buf))
-        return -1;
+        return S3_OTHER_ERROR;
     S3_String expire_str = { expire_buf, ret };
 
     for (int i = 0; i < 2; i++) {
