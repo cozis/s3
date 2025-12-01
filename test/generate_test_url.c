@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "s3.h"
+#include "../s3.h"
 
 int main(void)
 {

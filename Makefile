@@ -5,4 +5,4 @@ else
 endif
 
 all:
-	cc s3.c test.c -o test -Wall -Wextra $(LFLAGS) -ggdb
+	cc s3.c test/generate_test_url.c -o test/generate_test_url -Wall -Wextra $(LFLAGS) -ggdb
