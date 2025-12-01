@@ -5,8 +5,16 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <bcrypt.h>
+#ifndef NT_SUCCESS
+#define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+#endif
+#else
 #include <openssl/evp.h>
 #include <openssl/params.h>
+#endif
 
 #include "s3.h"
 
@@ -59,7 +67,6 @@ static int inplace_hex(char *buf, int len, bool up)
     return 0;
 }
 
-// TODO: double check this function
 static bool needs_percent(char c)
 {
     if ((c >= 'a' && c <= 'z') ||
@@ -121,6 +128,37 @@ static int sha256_len(char *buf, int len)
 // src and dst may overlap
 static int sha256(char *src, int len, char *dst)
 {
+#ifdef _WIN32
+    BCRYPT_ALG_HANDLE alg = NULL;
+    NTSTATUS status = BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, NULL, 0);
+    if (!NT_SUCCESS(status))
+        return -1;
+
+    BCRYPT_HASH_HANDLE hash = NULL;
+    status = BCryptCreateHash(alg, &hash, NULL, 0, NULL, 0, 0);
+    if (!NT_SUCCESS(status)) {
+        BCryptCloseAlgorithmProvider(alg, 0);
+        return -1;
+    }
+
+    status = BCryptHashData(hash, (PUCHAR) src, (ULONG) len, 0);
+    if (!NT_SUCCESS(status)) {
+        BCryptDestroyHash(hash);
+        BCryptCloseAlgorithmProvider(alg, 0);
+        return -1;
+    }
+
+    status = BCryptFinishHash(hash, (PUCHAR) dst, 32, 0);
+    if (!NT_SUCCESS(status)) {
+        BCryptDestroyHash(hash);
+        BCryptCloseAlgorithmProvider(alg, 0);
+        return -1;
+    }
+
+    BCryptDestroyHash(hash);
+    BCryptCloseAlgorithmProvider(alg, 0);
+    return 0;
+#else
     int olen = sha256_len(src, len);
 
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
@@ -149,6 +187,7 @@ static int sha256(char *src, int len, char *dst)
     }
 
     EVP_MD_CTX_free(ctx);
+#endif
     return 0;
 }
 
@@ -167,11 +206,41 @@ static int hmac_len(char *buf, int len1, int len2)
 
 static int inplace_hmac(char *buf, int len1, int len2)
 {
-    int olen = hmac_len(buf, len1, len2);
-
     S3_String key = { buf, len1 };
     S3_String data = { buf + len1, len2 };
 
+#ifdef _WIN32
+    BCRYPT_ALG_HANDLE alg = NULL;
+    NTSTATUS status = BCryptOpenAlgorithmProvider(&alg,
+        BCRYPT_SHA256_ALGORITHM, NULL, BCRYPT_ALG_HANDLE_HMAC_FLAG);
+    if (!NT_SUCCESS(status))
+        return -1;
+
+    BCRYPT_HASH_HANDLE hash = NULL;
+    status = BCryptCreateHash(alg, &hash, NULL, 0, (PUCHAR) key.ptr, (ULONG) key.len, 0);
+    if (!NT_SUCCESS(status)) {
+        BCryptCloseAlgorithmProvider(alg, 0);
+        return -1;
+    }
+
+    status = BCryptHashData(hash, (PUCHAR) data.ptr, (ULONG) data.len, 0);
+    if (!NT_SUCCESS(status)) {
+        BCryptDestroyHash(hash);
+        BCryptCloseAlgorithmProvider(alg, 0);
+        return -1;
+    }
+
+    status = BCryptFinishHash(hash, (PUCHAR) buf, 32, 0);
+    if (!NT_SUCCESS(status)) {
+        BCryptDestroyHash(hash);
+        BCryptCloseAlgorithmProvider(alg, 0);
+        return -1;
+    }
+
+    BCryptDestroyHash(hash);
+    BCryptCloseAlgorithmProvider(alg, 0);
+    return 0;
+#else
     EVP_MAC *mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
     if (mac == NULL) {
         return -1;
@@ -213,7 +282,8 @@ static int inplace_hmac(char *buf, int len1, int len2)
 
     EVP_MAC_CTX_free(ctx);
     EVP_MAC_free(mac);
-    return olen;
+    return 0;
+#endif
 }
 
 //////////////////////////////////////////////////////////////////
@@ -371,7 +441,7 @@ static void pop_mod_(Builder *b, char *file, int line)
             ret = inplace_hex(
                 b->dst + mod.off_0,
                 b->len - mod.off_0,
-                true);
+                false);
             break;
         case MOD_PCT:
             ret = inplace_pct(
@@ -422,8 +492,10 @@ static void append_credential(Builder *b,
     S3_String access_key, S3_String yyyymmdd,
     S3_String region, S3_String service)
 {
-    append(b, access_key);
-    append(b, S3_S("/"));
+    if (access_key.len > 0) {
+        append(b, access_key);
+        append(b, S3_S("/"));
+    }
     append(b, yyyymmdd);
     append(b, S3_S("/"));
     append(b, region);
@@ -435,7 +507,7 @@ static void append_credential(Builder *b,
 static int unpack_time(time_t time, struct tm *out)
 {
 #ifdef _WIN32
-    if (gmtime_s(out, time) != 0)
+    if (gmtime_s(out, &time) != 0)
         return -1;
     return 0;
 #else
@@ -549,6 +621,11 @@ int s3_presign_url(
                     append(&b, S3_S("aws4_request"));
                 pop_mod(&b);
                 flush(&b);
+                append(&b, S3_S("AWS4-HMAC-SHA256\n"));
+                append(&b, yyyymmddthhmmssz);
+                append(&b, S3_S("\n"));
+                append_credential(&b, S3_S(""), yyyymmdd, region, service);
+                append(&b, S3_S("\n"));
                 push_mod(&b, MOD_HEX);
                     push_mod(&b, MOD_SHA256);
                         append(&b, method);

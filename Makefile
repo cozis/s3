@@ -1,2 +1,8 @@
+ifeq ($(shell uname -a),Linux)
+	LFLAGS = -lcrypto
+else
+	LFLAGS = -lbcrypt
+endif
+
 all:
-	cc s3.c test.c -o test -Wall -Wextra -lcrypto -ggdb
+	cc s3.c test.c -o test -Wall -Wextra $(LFLAGS) -ggdb
