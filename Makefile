@@ -1,4 +1,4 @@
-ifeq ($(shell uname -a),Linux)
+ifeq ($(shell uname -s),Linux)
 	LFLAGS = -lcrypto
 else
 	LFLAGS = -lbcrypt

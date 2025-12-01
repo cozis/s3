@@ -10,11 +10,11 @@ int main(void)
         S3_S("GET"),
         3600,
         S3_S(""),
-        S3_S("accesskey"),
-        S3_S("secretkey"),
+        S3_S("minioadmin"),
+        S3_S("minioadmin"),
         S3_S("us-west-1"),
         S3_S("s3"),
-        S3_S("aws.com"),
+        S3_S("172.17.0.2:9000"),
         time(NULL),
         dst, sizeof(dst));
     if (len < 0) {

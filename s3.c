@@ -241,6 +241,8 @@ static int inplace_hmac(char *buf, int len1, int len2)
     BCryptCloseAlgorithmProvider(alg, 0);
     return 0;
 #else
+    int olen = hmac_len(buf, len1, len2);
+
     EVP_MAC *mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
     if (mac == NULL) {
         return -1;
